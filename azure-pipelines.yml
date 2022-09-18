@@ -1,0 +1,88 @@
+# .NET Core Function App to Windows on Azure
+# Build a .NET Core function app and deploy it to Azure as a Windows function App.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- master
+
+variables:
+  
+  # Agent VM image name
+  vmImageName: 'windows-latest'
+
+  # Working Directory
+  workingDirectory: '$(System.DefaultWorkingDirectory)/ImageGramFunctions'
+
+  # Project
+  mainProject: '$(System.DefaultWorkingDirectory)\ImageGramFunctions\ImageGramFunctions.csproj'
+
+stages:
+- stage: Build
+  displayName: Build stage
+
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET Core sdk'
+      inputs:
+        packageType: 'sdk'
+        version: '6.x'
+        includePreviewVersions: true
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet restore'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+        feedsToUse: 'config'
+        nugetConfigPath: 'nuget.config'
+    
+    - task: DotNetCoreCLI@2
+      displayName: Build
+      inputs:
+        command: 'build'
+        projects: |
+          $(workingDirectory)/*.csproj
+        arguments: --output $(System.DefaultWorkingDirectory)/publish_output --configuration Release    
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: 'test'
+        projects: '**/ImageGramFunctions.Tests.csproj'
+        arguments: '--configuration $(BuildConfiguration) /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura'
+
+    - task: reportgenerator@4
+      inputs:
+        reports: '**/coverage.cobertura.xml'
+        targetdir: 'CoverageReport'
+
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: 'Cobertura'
+        summaryFileLocation: '**/coverage.cobertura.xml'
+        reportDirectory: 'CoverageReport'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.StagingDirectory)'
+        ArtifactName: 'tests'
+        publishLocation: 'Container'
+
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: 'publish'
+        publishWebProjects: false
+        arguments: '$(mainProject) -o $(Build.ArtifactStagingDirectory)'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+
